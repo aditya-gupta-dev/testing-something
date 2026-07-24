@@ -75,18 +75,30 @@ Bun.serve({
         }
 
         const accessToken = tokenData.access_token;
-        const userId = tokenData.user_id;
+        
+        // IMPORTANT: The user_id returned by the token endpoint is NOT the Threads User ID!
+        // We MUST fetch the actual Threads User ID from the /me endpoint just like Postiz does.
+        const meResponse = await fetch(`https://graph.threads.net/v1.0/me?access_token=${accessToken}`);
+        const meData = await meResponse.json();
+        
+        if (meData.error) {
+           console.error("Me Error:", meData);
+           const errorHtml = `<h2>Error fetching user info</h2><pre>${JSON.stringify(meData, null, 2)}</pre><a href="/">Try again</a>`;
+           responseCache.set(code, errorHtml);
+           return new Response(errorHtml, { status: 400, headers: { 'Content-Type': 'text/html' } });
+        }
+        
+        const threadsUserId = meData.id;
+        console.log(`Got correct Threads User ID: ${threadsUserId}. Creating text container...`);
 
-        console.log(`Got token for user ${userId}. Creating text container...`);
-
-        // 2. Create Threads Text Container (application/x-www-form-urlencoded as per docs)
+        // 2. Create Threads Text Container
         const createParams = new URLSearchParams({
           media_type: 'TEXT',
           text: 'Done My Boi',
           access_token: accessToken,
         });
 
-        const createResponse = await fetch(`https://graph.threads.net/v1.0/${userId}/threads`, {
+        const createResponse = await fetch(`https://graph.threads.net/v1.0/${threadsUserId}/threads`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: createParams.toString(),
@@ -104,18 +116,18 @@ Bun.serve({
         const creationId = createData.id;
         console.log(`Container created: ${creationId}. Waiting 15 seconds to ensure processing...`);
 
-        // Wait for Threads to process the container. Docs recommend 30s, but 15s is usually very safe for TEXT.
+        // Wait for Threads to process the container.
         await Bun.sleep(15000);
 
         console.log(`Publishing container ${creationId}...`);
 
-        // 3. Publish the Thread (application/x-www-form-urlencoded as per docs)
+        // 3. Publish the Thread
         const publishParams = new URLSearchParams({
           creation_id: creationId,
           access_token: accessToken,
         });
         
-        const publishResponse = await fetch(`https://graph.threads.net/v1.0/${userId}/threads_publish`, {
+        const publishResponse = await fetch(`https://graph.threads.net/v1.0/${threadsUserId}/threads_publish`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: publishParams.toString(),
